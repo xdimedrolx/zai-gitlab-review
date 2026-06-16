@@ -1,0 +1,16 @@
+# Example: consuming project .gitlab-ci.yml
+#
+# 1. Settings > CI/CD > Variables: add ZAI_API_KEY (masked) and GITLAB_TOKEN (masked).
+# 2. Settings > Merge requests: ensure merge request pipelines are enabled.
+
+include:
+  - project: 'your-group/zai-gitlab'
+    file: '/templates/zai-code-review.yml'
+    ref: main
+
+# Optionally override defaults for the included job:
+zai-code-review:
+  variables:
+    ZAI_MODEL: "glm-4.7"
+    ZAI_SYSTEM_PROMPT: "You are a senior reviewer. Be terse. Flag bugs and security issues only."
+    MAX_DIFF_CHARS: "60000"
