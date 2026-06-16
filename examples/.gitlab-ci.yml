@@ -4,13 +4,11 @@
 # 2. Settings > Merge requests: ensure merge request pipelines are enabled.
 
 include:
-  - project: 'your-group/zai-gitlab'
-    file: '/templates/zai-code-review.yml'
-    ref: main
+  - remote: 'https://raw.githubusercontent.com/xdimedrolx/zai-gitlab-review/main/templates/zai-code-review.yml'
 
 # Optionally override defaults for the included job:
 zai-code-review:
   variables:
-    ZAI_MODEL: "glm-4.7"
+    ZAI_MODEL: "glm-5.2"
     ZAI_SYSTEM_PROMPT: "You are a senior reviewer. Be terse. Flag bugs and security issues only."
     MAX_DIFF_CHARS: "60000"

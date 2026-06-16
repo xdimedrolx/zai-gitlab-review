@@ -218,7 +218,7 @@ function getInput(name, { required = false, fallback = '' } = {}) {
 }
 
 const DEFAULTS = {
-  ZAI_MODEL: 'glm-4.7',
+  ZAI_MODEL: 'glm-5.2',
   ZAI_SYSTEM_PROMPT: 'You are an expert code reviewer. Review the provided code changes and give clear, actionable feedback.',
   ZAI_REVIEWER_NAME: 'Z.ai Code Review',
   EXCLUDE_PATTERNS: '*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml',

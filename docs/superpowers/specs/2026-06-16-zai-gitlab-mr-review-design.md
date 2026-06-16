@@ -7,9 +7,13 @@
 ## Decisions
 
 - **Comments:** single summary MR note (mirror original), updated in place each push.
-- **Packaging:** both — Docker image + CI template (`include:`) referencing the image.
+- **Packaging:** Docker image on GHCR + GitLab CI template. Repo hosted on GitHub
+  (`github.com/xdimedrolx/zai-gitlab-review`); image auto-built/pushed by GitHub Actions to
+  `ghcr.io/xdimedrolx/zai-gitlab-review`. Consumers include the template by remote raw URL
+  (GitLab `include: project:` can't reach GitHub-hosted repos).
 - **Runtime:** keep Node.js, reuse original logic ~1:1.
 - **Target:** gitlab.com + self-hosted, via `CI_API_V4_URL` (zero config).
+- **Default model:** `glm-5.2`.
 
 ## Architecture
 

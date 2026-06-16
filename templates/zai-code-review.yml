@@ -1,25 +1,26 @@
 # Z.ai Code Review — GitLab CI template.
 #
-# Usage in a downstream project's .gitlab-ci.yml:
+# The repo is hosted on GitHub, so consumers include it via a remote raw URL
+# (GitLab `include: project:` only works for GitLab-hosted repos). In the
+# downstream project's .gitlab-ci.yml:
 #
 #   include:
-#     - project: 'your-group/zai-gitlab'
-#       file: '/templates/zai-code-review.yml'
-#       ref: main
+#     - remote: 'https://raw.githubusercontent.com/xdimedrolx/zai-gitlab-review/main/templates/zai-code-review.yml'
 #
 # Then set masked CI/CD variables: ZAI_API_KEY and GITLAB_TOKEN.
 # Requirements:
 #   - Merge request pipelines enabled.
 #   - GITLAB_TOKEN = Project/Group Access Token or PAT with `api` scope, role >= Developer.
 #     CI_JOB_TOKEN does NOT work — it cannot post MR notes via the API.
+#   - The GHCR image below must be public (or add a docker login step for GHCR).
 
 zai-code-review:
-  image: registry.gitlab.com/your-group/zai-gitlab:latest
+  image: ghcr.io/xdimedrolx/zai-gitlab-review:latest
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   variables:
     # Override any of these in the consuming project as needed.
-    ZAI_MODEL: "glm-4.7"
+    ZAI_MODEL: "glm-5.2"
     ZAI_REVIEWER_NAME: "Z.ai Code Review"
     EXCLUDE_PATTERNS: "*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
     MAX_DIFF_CHARS: "0"

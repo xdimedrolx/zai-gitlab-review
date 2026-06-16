@@ -1,5 +1,5 @@
 {
-  "name": "zai-gitlab",
+  "name": "zai-gitlab-review",
   "version": "0.1.0",
   "description": "AI-powered code review for GitLab Merge Requests using Z.ai (GLM) models",
   "main": "src/index.js",

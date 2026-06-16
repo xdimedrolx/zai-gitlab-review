@@ -1,4 +1,4 @@
-# zai-gitlab
+# zai-gitlab-review
 
 AI-powered code review for **GitLab Merge Requests** using [Z.ai](https://z.ai) (GLM) models.
 A GitLab CI port of [tarmojussila/zai-code-review](https://github.com/tarmojussila/zai-code-review)
@@ -12,17 +12,22 @@ single MR note — updated in place on each push.
 
 ## Setup
 
-### 1. Publish the Docker image
+### 1. Docker image (published automatically)
 
-Build and push to a registry your runners can reach (e.g. the project's container registry):
+The image is built and pushed to **GHCR** by GitHub Actions
+([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)) on every push
+to `main` and on version tags. No manual build needed:
 
-```sh
-docker build -t registry.gitlab.com/your-group/zai-gitlab:latest .
-docker push registry.gitlab.com/your-group/zai-gitlab:latest
+```
+ghcr.io/xdimedrolx/zai-gitlab-review:latest
 ```
 
-Update the `image:` line in [templates/zai-code-review.yml](templates/zai-code-review.yml)
-to match your registry path.
+**Make the package public** so GitLab runners can pull it without authentication:
+GitHub repo → Packages → `zai-gitlab-review` → Package settings → Change visibility → Public.
+(If you must keep it private, add a `docker login ghcr.io` step in the GitLab job using a CI
+variable holding a GitHub token with `read:packages`.)
+
+To cut a versioned image, push a tag: `git tag v0.1.0 && git push --tags`.
 
 ### 2. Add CI/CD variables (in the consuming project)
 
@@ -43,14 +48,16 @@ Settings → Merge requests → ensure MR pipelines are enabled. The job runs on
 
 ### 4. Include the template
 
-In the consuming project's `.gitlab-ci.yml` — see [examples/.gitlab-ci.yml](examples/.gitlab-ci.yml):
+The repo is on GitHub, so include it by remote raw URL (GitLab `include: project:` only works
+for GitLab-hosted repos). In the consuming project's `.gitlab-ci.yml` — see
+[examples/.gitlab-ci.yml](examples/.gitlab-ci.yml):
 
 ```yaml
 include:
-  - project: 'your-group/zai-gitlab'
-    file: '/templates/zai-code-review.yml'
-    ref: main
+  - remote: 'https://raw.githubusercontent.com/xdimedrolx/zai-gitlab-review/main/templates/zai-code-review.yml'
 ```
+
+(Alternatively, copy the ~10-line job from the template straight into your `.gitlab-ci.yml`.)
 
 ## Inputs
 
@@ -60,7 +67,7 @@ Set as CI/CD variables. Defaults match the original action.
 |---|---|---|
 | `ZAI_API_KEY` | yes | — |
 | `GITLAB_TOKEN` | yes | — |
-| `ZAI_MODEL` | no | `glm-4.7` |
+| `ZAI_MODEL` | no | `glm-5.2` |
 | `ZAI_SYSTEM_PROMPT` | no | "You are an expert code reviewer…" |
 | `ZAI_REVIEWER_NAME` | no | `Z.ai Code Review` |
 | `EXCLUDE_PATTERNS` | no | `*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml` |
