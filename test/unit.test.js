@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { matchesPattern, filterFiles, buildPrompt, mapGitlabDiff } = require('../src/index.js');
+const { matchesPattern, filterFiles, buildPrompt, mapGitlabDiff, readFileContent } = require('../src/index.js');
 
 test('matchesPattern: exact and basename', () => {
   assert.equal(matchesPattern('yarn.lock', 'yarn.lock'), true);
@@ -53,7 +53,7 @@ test('mapGitlabDiff: falls back to old_path when new_path absent', () => {
 });
 
 test('buildPrompt: includes patch fenced as diff', () => {
-  const out = buildPrompt([{ filename: 'a.js', status: 'modified', patch: '@@ -1 +1 @@' }], 0);
+  const out = buildPrompt([{ filename: 'a.js', status: 'modified', patch: '@@ -1 +1 @@' }], {});
   assert.match(out, /### a\.js \(modified\)/);
   assert.match(out, /```diff\n@@ -1 \+1 @@\n```/);
 });
@@ -64,13 +64,66 @@ test('buildPrompt: skips files over MAX_DIFF_CHARS and notes them', () => {
     { filename: 'small.js', status: 'modified', patch: 'a' },
     { filename: 'big.js', status: 'modified', patch: big },
   ];
-  const out = buildPrompt(files, 100);
+  const out = buildPrompt(files, { maxDiffChars: 100 });
   assert.match(out, /small\.js/);
   assert.match(out, /excluded because the diff exceeded/);
   assert.match(out, /> - big\.js/);
 });
 
 test('buildPrompt: ignores files without patch', () => {
-  const out = buildPrompt([{ filename: 'bin.png', status: 'added' }], 0);
+  const out = buildPrompt([{ filename: 'bin.png', status: 'added' }], {});
   assert.doesNotMatch(out, /bin\.png/);
+});
+
+test('buildPrompt: includes full file content when present', () => {
+  const out = buildPrompt(
+    [{ filename: 'a.js', status: 'modified', patch: '@@ -1 +1 @@', content: 'const x = 1;\n' }],
+    {},
+  );
+  assert.match(out, /\*\*Full file \(current\):\*\*/);
+  assert.match(out, /const x = 1;/);
+});
+
+test('buildPrompt: omits content over MAX_CONTEXT_CHARS and notes it', () => {
+  const files = [
+    { filename: 'a.js', status: 'modified', patch: 'd', content: 'x'.repeat(50) },
+    { filename: 'b.js', status: 'modified', patch: 'd', content: 'y'.repeat(500) },
+  ];
+  const out = buildPrompt(files, { maxContextChars: 100 });
+  assert.match(out, /xxxxx/);                       // a.js content kept
+  assert.doesNotMatch(out, /yyyyy/);                // b.js content dropped
+  assert.match(out, /full content omitted/);
+  assert.match(out, /> - b\.js/);
+});
+
+test('buildPrompt: shows contentNote when content unavailable', () => {
+  const out = buildPrompt(
+    [{ filename: 'a.js', status: 'modified', patch: 'd', contentNote: 'binary' }],
+    {},
+  );
+  assert.match(out, /full file omitted: binary/);
+});
+
+test('readFileContent: reads an existing file', () => {
+  const r = readFileContent('package.json', 0);
+  assert.equal(typeof r.text, 'string');
+  assert.match(r.text, /"name": "zai-gitlab-review"/);
+});
+
+test('readFileContent: missing file returns a note', () => {
+  const r = readFileContent('does/not/exist.xyz', 0);
+  assert.equal(r.text, undefined);
+  assert.equal(typeof r.note, 'string');
+});
+
+test('readFileContent: rejects path traversal outside repo', () => {
+  const r = readFileContent('../../../etc/passwd', 0);
+  assert.equal(r.text, undefined);
+  assert.equal(r.note, 'outside repo');
+});
+
+test('readFileContent: too-large file returns a note, not text', () => {
+  const r = readFileContent('package.json', 5);
+  assert.equal(r.text, undefined);
+  assert.match(r.note, /too large/);
 });

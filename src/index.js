@@ -1,5 +1,7 @@
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const ZAI_API_URL = 'https://api.z.ai/api/coding/paas/v4/chat/completions';
 const COMMENT_MARKER = '<!-- zai-code-review -->';
@@ -28,29 +30,68 @@ function filterFiles(files, excludePatterns) {
   return files.filter(f => !excludePatterns.some(p => matchesPattern(f.filename, p)));
 }
 
-function buildPrompt(files, maxDiffChars) {
+// Read a changed file's full current content from the checked-out repo (CWD).
+// Returns {text} on success, or {note} describing why content was omitted.
+function readFileContent(filename, maxChars) {
+  try {
+    const root = process.cwd();
+    const full = path.resolve(root, filename);
+    // Guard against path traversal outside the repo root.
+    if (full !== root && !full.startsWith(root + path.sep)) return { note: 'outside repo' };
+    const stat = fs.statSync(full);
+    if (!stat.isFile()) return { note: 'not a file' };
+    const buf = fs.readFileSync(full);
+    if (buf.includes(0)) return { note: 'binary' };
+    const text = buf.toString('utf8');
+    if (maxChars > 0 && text.length > maxChars) return { note: `too large (${text.length} chars)` };
+    return { text };
+  } catch {
+    return { note: 'unavailable' };
+  }
+}
+
+function buildPrompt(files, { maxDiffChars = 0, maxContextChars = 0 } = {}) {
   const patchableFiles = files.filter(f => f.patch);
-  const includedDiffs = [];
-  const skippedFiles = [];
-  let totalChars = 0;
+  const sections = [];
+  const skippedDiff = [];
+  const skippedContent = [];
+  let diffChars = 0;
+  let contentChars = 0;
 
   for (const f of patchableFiles) {
-    const entry = `### ${f.filename} (${f.status})\n\`\`\`diff\n${f.patch}\n\`\`\``;
-    if (maxDiffChars > 0 && totalChars + entry.length > maxDiffChars) {
-      skippedFiles.push(f.filename);
-    } else {
-      includedDiffs.push(entry);
-      totalChars += entry.length;
+    const diffEntry = `\`\`\`diff\n${f.patch}\n\`\`\``;
+    if (maxDiffChars > 0 && diffChars + diffEntry.length > maxDiffChars) {
+      skippedDiff.push(f.filename);
+      continue;
     }
+    diffChars += diffEntry.length;
+
+    let section = `### ${f.filename} (${f.status})\n\n**Diff:**\n${diffEntry}`;
+
+    if (typeof f.content === 'string') {
+      if (maxContextChars > 0 && contentChars + f.content.length > maxContextChars) {
+        skippedContent.push(f.filename);
+      } else {
+        contentChars += f.content.length;
+        section += `\n\n**Full file (current):**\n\`\`\`\n${f.content}\n\`\`\``;
+      }
+    } else if (f.contentNote) {
+      section += `\n\n_(full file omitted: ${f.contentNote})_`;
+    }
+
+    sections.push(section);
   }
 
-  let diffs = includedDiffs.join('\n\n');
+  let body = sections.join('\n\n');
 
-  if (skippedFiles.length > 0) {
-    diffs += `\n\n> **Note:** The following files were excluded because the diff exceeded the \`MAX_DIFF_CHARS\` limit:\n${skippedFiles.map(f => `> - ${f}`).join('\n')}`;
+  if (skippedDiff.length > 0) {
+    body += `\n\n> **Note:** files excluded because the diff exceeded \`MAX_DIFF_CHARS\`:\n${skippedDiff.map(f => `> - ${f}`).join('\n')}`;
+  }
+  if (skippedContent.length > 0) {
+    body += `\n\n> **Note:** full content omitted (over \`MAX_CONTEXT_CHARS\`), diff only:\n${skippedContent.map(f => `> - ${f}`).join('\n')}`;
   }
 
-  return `Please review the following merge request changes and provide concise, constructive feedback. Focus on bugs, logic errors, security issues, and meaningful improvements. Skip trivial style comments.\n\n${diffs}`;
+  return `Please review the following merge request. For each changed file you are given the diff (what changed) and, where available, the full current file content for context. Review the CHANGES shown in the diffs — use the full files only as context to judge them. Do not nitpick pre-existing code unrelated to the diff. Focus on bugs, logic errors, security issues, and meaningful improvements. Skip trivial style comments.\n\n${body}`;
 }
 
 // Map a GitLab diff entry to the {filename, patch, status} shape the helpers expect.
@@ -223,6 +264,9 @@ const DEFAULTS = {
   ZAI_REVIEWER_NAME: 'Z.ai Code Review',
   EXCLUDE_PATTERNS: '*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml',
   MAX_DIFF_CHARS: '0',
+  INCLUDE_FILE_CONTENT: 'true',
+  MAX_FILE_CONTENT_CHARS: '30000',
+  MAX_CONTEXT_CHARS: '200000',
 };
 
 // ---------------------------------------------------------------------------
@@ -239,6 +283,9 @@ async function run() {
     .map(p => p.trim())
     .filter(p => p.length > 0);
   const maxDiffChars = parseInt(getInput('MAX_DIFF_CHARS', { fallback: DEFAULTS.MAX_DIFF_CHARS }), 10) || 0;
+  const includeContent = getInput('INCLUDE_FILE_CONTENT', { fallback: DEFAULTS.INCLUDE_FILE_CONTENT }) !== 'false';
+  const maxFileContentChars = parseInt(getInput('MAX_FILE_CONTENT_CHARS', { fallback: DEFAULTS.MAX_FILE_CONTENT_CHARS }), 10) || 0;
+  const maxContextChars = parseInt(getInput('MAX_CONTEXT_CHARS', { fallback: DEFAULTS.MAX_CONTEXT_CHARS }), 10) || 0;
   const token = getInput('GITLAB_TOKEN', { required: true });
 
   const apiBase = getInput('CI_API_V4_URL', { required: true });
@@ -270,7 +317,22 @@ async function run() {
     return;
   }
 
-  const prompt = buildPrompt(filteredFiles, maxDiffChars);
+  if (includeContent) {
+    let withContent = 0;
+    for (const f of filteredFiles) {
+      if (!f.patch || f.status === 'removed') continue;
+      const r = readFileContent(f.filename, maxFileContentChars);
+      if (r.text != null) {
+        f.content = r.text;
+        withContent++;
+      } else if (r.note) {
+        f.contentNote = r.note;
+      }
+    }
+    console.log(`Attached full content for ${withContent} file(s).`);
+  }
+
+  const prompt = buildPrompt(filteredFiles, { maxDiffChars, maxContextChars });
 
   console.log(`Sending ${filteredFiles.length} file(s) to Z.ai for review...`);
   const review = await callZaiApi(apiKey, model, systemPrompt, prompt);
@@ -293,6 +355,7 @@ module.exports = {
   filterFiles,
   buildPrompt,
   mapGitlabDiff,
+  readFileContent,
   getInput,
   run,
 };

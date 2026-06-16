@@ -72,6 +72,17 @@ Set as CI/CD variables. Defaults match the original action.
 | `ZAI_REVIEWER_NAME` | no | `Z.ai Code Review` |
 | `EXCLUDE_PATTERNS` | no | `*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml` |
 | `MAX_DIFF_CHARS` | no | `0` (unlimited) |
+| `INCLUDE_FILE_CONTENT` | no | `true` |
+| `MAX_FILE_CONTENT_CHARS` | no | `30000` (per file; `0` = unlimited) |
+| `MAX_CONTEXT_CHARS` | no | `200000` (total full-file content; `0` = unlimited) |
+
+### Context
+
+For each changed file the model receives the **diff** (what changed) plus the **full current
+file content** read from the checked-out repo, so it can judge changes against the whole file
+rather than just the diff hunks. Set `INCLUDE_FILE_CONTENT: "false"` to send diffs only.
+Per-file content above `MAX_FILE_CONTENT_CHARS` is skipped (diff still sent); total content is
+capped by `MAX_CONTEXT_CHARS`. Binary files and files outside the repo are never read.
 
 `CI_API_V4_URL`, `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID` are provided automatically by
 GitLab CI.
