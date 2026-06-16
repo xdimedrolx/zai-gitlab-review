@@ -12,6 +12,9 @@ env:
   REGISTRY: ghcr.io
   # Resolves to ghcr.io/<owner>/zai-gitlab-review. metadata-action lowercases it.
   IMAGE_NAME: ${{ github.repository }}
+  # docker/* actions still bundle a Node 20 wrapper; opt them into Node 24 now
+  # to clear the deprecation warning (forced default anyway from 2026-06-16).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
